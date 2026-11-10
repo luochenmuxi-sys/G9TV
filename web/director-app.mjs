@@ -298,3 +298,50 @@ const updateButton=button('检查更新',async()=>{
  }catch(error){status.textContent='无法检查更新：'+error.message;content.append(el('p','hint','网络恢复后可重试；已安装的本地功能可继续使用。'))}
 });document.querySelector('header').append(updateButton);
 const drawConnectionsNow=wires;let connectionFrame=0;wires=function(){if(connectionFrame)return;connectionFrame=requestAnimationFrame(()=>{connectionFrame=0;drawConnectionsNow()})};
+
+
+
+
+
+let featurePollTimer=null;
+const featureSize=bytes=>bytes?(bytes/1e9).toFixed(2)+' GB':'0 GB';
+async function openFeatureInstaller(){
+ const content=$('#dialog-content');content.replaceChildren(el('h2',null,'功能安装与本地检测'));
+ const hardware=el('p','hint','正在检测此电脑的硬件、节点和已配置模型目录…'),controls=el('div'),list=el('div'),summary=el('p','hint','勾选需要的功能后查看安装计划。'),status=el('p');status.setAttribute('role','status');status.style.whiteSpace='pre-wrap';controls.style.cssText='position:sticky;top:0;z-index:3;background:#202326;padding:8px;display:flex;gap:7px;flex-wrap:wrap;border-radius:8px';
+ content.append(hardware,controls,list,summary,status);if(!$('#dialog').open)$('#dialog').showModal();
+ const chosen=new Set();let report,working=false;clearTimeout(featurePollTimer);
+ const rootInput=el('input');rootInput.placeholder='已有模型根目录，例如 F:\\AI\\models';rootInput.setAttribute('aria-label','已有模型根目录');rootInput.style.cssText='width:65%;margin:10px 8px 8px 0';
+ const rootAdd=button('添加现有模型目录',async()=>{try{const result=await api('/features/model-root',{method:'POST',body:JSON.stringify({path:rootInput.value.trim()})});status.textContent='已加入模型目录：'+result.root;rootInput.value='';await scan()}catch(error){status.textContent=error.message}});content.insertBefore(rootInput,list);content.insertBefore(rootAdd,list);
+ const refresh=button('重新检测',()=>scan()),preview=button('查看安装计划',()=>showPlan()),install=button('安装所选缺失组件',()=>start()),cancel=button('停止安装',async()=>{try{const result=await api('/features/cancel',{method:'POST',body:'{}'});status.textContent=result.note}catch(error){status.textContent=error.message}});install.disabled=true;cancel.hidden=true;controls.append(refresh,preview,install,cancel);
+ const selected=()=>[...chosen];
+ async function showPlan(){
+  install.disabled=true;try{const plan=await api('/features/plan',{method:'POST',body:JSON.stringify({features:selected()})});summary.textContent=`待下载模型 ${featureSize(plan.download_model_bytes)} · 已有模型可复用 ${featureSize(plan.reused_model_bytes)}。节点和Python依赖另计。`;
+   for(const [drive,volume]of Object.entries(plan.volumes))summary.append(el('div',null,`${drive} 建议剩余 ${featureSize(volume.required)} · 当前 ${featureSize(volume.free)} · ${volume.enough?'空间足够':'空间不足'}`));
+   summary.append(el('div',null,'仅下载所选功能。已有模型先验证SHA-256；校验失败时实际下载量可能增加。不会自动升级ComfyUI或PyTorch。缺少核心节点时需要更新ComfyUI。'));if(plan.variant_files?.length)summary.append(el('div',null,'存在同名但大小不同的本地版本：'+plan.variant_files.join('、')+'。安装将先保留旧文件备份，再使用清单版本；若当前版本已能生成，可不勾选这一功能。'));install.disabled=working||Object.values(plan.volumes).some(v=>!v.enough);return plan;
+  }catch(error){summary.textContent=error.message;return null}
+ }
+ async function scan(){
+  refresh.disabled=true;try{report=await api('/features');const h=report.hardware;hardware.textContent=`${h.system} ${h.machine} · ${h.gpu} / ${h.vram_gb}GB显存 · ${h.ram_gb}GB内存 · Python ${h.python} · Torch ${h.torch}`;list.replaceChildren();
+   for(const feature of report.features){const item=el('section');item.style.cssText='border:1px solid #ffffff22;border-radius:10px;padding:12px;margin:12px 0;overflow-wrap:anywhere';const label=el('label'),check=el('input');check.type='checkbox';check.style.width='auto';check.setAttribute('aria-label',feature.name);check.checked=chosen.has(feature.id);check.onchange=()=>{check.checked?chosen.add(feature.id):chosen.delete(feature.id);install.disabled=true;summary.textContent='选择已更改，请重新查看安装计划。'};label.append(check,document.createTextNode(' '+feature.name));item.append(label);
+    item.append(el('p',null,feature.status==='components_ready'?'✓ 组件已检测齐全 · 生成效果尚未验收':'需要补齐组件 / 重启后检测'));
+    item.append(el('p','hint',`基础建议：显存 ${feature.minimum_vram_gb?feature.minimum_vram_gb+'GB':'无需独显'} / 内存 ${feature.minimum_ram_gb}GB；推荐显存 ${feature.recommended_vram_gb?feature.recommended_vram_gb+'GB':'无需独显'} / 内存 ${feature.recommended_ram_gb}GB。`));
+    item.append(el('p','hint',`${feature.files.filter(f=>f.present).length}/${feature.files.length} 个模型文件与清单大小一致 · 完整模型 ${featureSize(feature.total_model_bytes)} · 缺失/版本不同需下载 ${featureSize(feature.missing_model_bytes)}`),el('p','hint',feature.note),el('p','hint',feature.hardware_note));
+    const warnings=[...feature.warnings];if(feature.id==='edit'&&!h.edge)warnings.push('未找到Edge，独立剪辑窗口需要安装Edge');if(feature.missing_core_nodes.length)warnings.push('核心节点未加载：'+feature.missing_core_nodes.join(', '));if(feature.missing_packages.length)warnings.push('缺少/版本不符的依赖：'+feature.missing_packages.join(', '));
+    for(const plugin of feature.plugins)warnings.push(plugin.loaded?'节点已加载：'+plugin.id:plugin.directory?'节点目录已存在但未加载，需重启或检查导入错误：'+plugin.id:'节点未安装：'+plugin.id);
+    if(warnings.length)item.append(el('p','hint',warnings.join('；')));
+    const detail=el('details');detail.append(el('summary',null,'查看模型、位置与来源'));for(const file of feature.files)detail.append(el('div','hint',`${file.present?'已存在（大小匹配，未完整校验）':file.integrity==='size_mismatch'?'本地版本不同（大小不一致，不代表损坏）':'缺失'}：${file.target} · ${featureSize(file.size)}\n${file.path}`));if(feature.source){const link=el('a',null,'查看模型来源与许可');link.href=feature.source;link.target='_blank';link.rel='noopener';detail.append(link)}detail.append(el('p','hint',feature.license_note||''));for(const plugin of feature.plugins){const link=el('a',null,' 节点来源：'+plugin.id);link.href=plugin.source;link.target='_blank';link.rel='noopener';detail.append(link)}item.append(detail);list.append(item)
+   }
+   list.append(el('p','hint',report.note));
+  }catch(error){status.textContent='检测失败：'+error.message}finally{refresh.disabled=false}
+ }
+ async function poll(){
+  if(!$('#dialog').open||!content.contains(status))return;
+  try{const job=await api('/features/job');working=job.state==='running';cancel.hidden=!working;refresh.disabled=working;preview.disabled=working;if(job.state!=='idle')status.textContent=`${job.stage||job.state}${job.total?' · 文件 '+job.completed+'/'+job.total:''}${job.errors?.length?'\n'+job.errors.join('\n'):''}`;if(working){install.disabled=true;featurePollTimer=setTimeout(poll,1600)}else if(job.restartRequired)status.append(el('p','hint','请使用ComfyUI自带的重启按钮加载节点；重启后点击重新检测。'))
+  }catch(error){status.textContent=error.message}
+ }
+ async function start(){const plan=await showPlan();if(!plan||install.disabled)return;install.disabled=true;try{await api('/features/install',{method:'POST',body:JSON.stringify({features:selected(),confirmed:true})});working=true;status.textContent='正在安装；请勿同时生成或关闭ComfyUI。模型可能有数十GB，具体下载速度取决于网络。';poll()}catch(error){status.textContent=error.message;install.disabled=false}}
+ await scan();poll();
+}
+const featureButton=button('功能管理 / 安装',openFeatureInstaller);featureButton.id='feature-manager';document.querySelector('header').insertBefore(featureButton,updateButton);
+const featureHeaderStyle=el('style');featureHeaderStyle.textContent='.g9-tools-menu{position:relative;white-space:nowrap}.g9-tools-menu>summary{cursor:pointer;padding:7px 9px;border:1px solid #ffffff22;border-radius:7px;font-size:11px}.g9-tools-menu>div{position:absolute;right:0;top:100%;z-index:70;display:grid;gap:6px;min-width:140px;background:#202326;padding:9px;border:1px solid #ffffff22;border-radius:8px}';document.head.append(featureHeaderStyle);
+const compatibilityMenu=el('details','g9-tools-menu'),compatibilityButtons=el('div');compatibilityMenu.append(el('summary',null,'更多'),compatibilityButtons);for(const id of ['video-timeline-toggle','audio-timeline-toggle']){const control=$('#'+id);if(control)compatibilityButtons.append(control)}document.querySelector('header').append(compatibilityMenu);

@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "package_url": "https://raw.githubusercontent.com/luochenmuxi-sys/G9TV/main/dist/G9TV-plugin.zip",
-  "sha256": "cbd4534ae55b569633c9517a2b7a03c518bb0d6f8092368d5c3d4cadb4d31b26",
-  "notes": "独立剪辑窗口、素材按需加载、声音与多轨编辑、按需联网更新。"
+  "sha256": "9ece6dec1b5cf28c1ce1c632fe7f0bcfd8302a05e9e9a57353263566f1408a47",
+  "notes": "1.1.0：按功能选择安装、本地模型/节点/依赖检测、硬件与磁盘需求、已有模型目录复用。"
 }

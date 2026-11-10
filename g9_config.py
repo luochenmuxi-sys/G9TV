@@ -10,6 +10,11 @@ PROJECTS = Path(os.environ['G9TV_PROJECTS']) if os.environ.get('G9TV_PROJECTS') 
 def moss_model_path():
     if os.environ.get('G9TV_MOSS_PATH'):
         return os.environ['G9TV_MOSS_PATH']
+    try:
+        for root in folder_paths.get_folder_paths('moss_image'):
+            path=Path(root)/'MOSS-Image-SFT'
+            if path.is_dir():return str(path)
+    except (KeyError,ValueError):pass
     for root in [Path(folder_paths.models_dir), Path('D:/ComfyUI/app/ComfyUI/models')]:
         path = root / 'moss_image/MOSS-Image-SFT'
         if path.is_dir():

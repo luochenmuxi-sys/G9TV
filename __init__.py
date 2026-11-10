@@ -68,3 +68,5 @@ from . import audio_extract
 from . import editor
 
 from . import update_service
+
+from . import features

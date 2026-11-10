@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "package_url": "https://raw.githubusercontent.com/luochenmuxi-sys/G9TV/main/dist/G9TV-plugin.zip",
+  "sha256": "cbd4534ae55b569633c9517a2b7a03c518bb0d6f8092368d5c3d4cadb4d31b26",
+  "notes": "独立剪辑窗口、素材按需加载、声音与多轨编辑、按需联网更新。"
+}
